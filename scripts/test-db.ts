@@ -18,6 +18,17 @@ const EXPECTED_SYSTEM_TYPES = [
   "link",
 ];
 
+const DEMO_EMAIL = "demo@devstash.io";
+
+/** Mirrors prisma/seed.ts — update both together. */
+const EXPECTED_COLLECTIONS: Record<string, number> = {
+  "React Patterns": 3,
+  "AI Workflows": 3,
+  DevOps: 4,
+  "Terminal Commands": 4,
+  "Design Resources": 4,
+};
+
 /** Host only — never print the full URL, it carries credentials. */
 function describeHost(url: string | undefined) {
   if (!url) return "not set";
@@ -33,6 +44,64 @@ const failures: string[] = [];
 function check(label: string, ok: boolean, detail: string) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label} — ${detail}`);
   if (!ok) failures.push(label);
+}
+
+function fetchDemoCollections(userId: string) {
+  return prisma.collection.findMany({
+    where: { userId },
+    orderBy: { name: "asc" },
+    include: {
+      defaultType: { select: { name: true } },
+      items: {
+        orderBy: { addedAt: "asc" },
+        include: {
+          item: {
+            include: {
+              itemType: { select: { name: true } },
+              tags: { select: { name: true }, orderBy: { name: "asc" } },
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+type DemoCollection = Awaited<ReturnType<typeof fetchDemoCollections>>[number];
+
+function truncate(text: string, max: number) {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+/**
+ * Prints the seeded content as a tree. `P` marks a pinned item, `F` a
+ * favorite — the two flags the dashboard's pinned/favorites sections read.
+ */
+function printDemoData(demoCollections: DemoCollection[]) {
+  console.log("\nDemo data\n");
+
+  for (const collection of demoCollections) {
+    const meta = [
+      collection.defaultType ? `default: ${collection.defaultType.name}` : null,
+      collection.isFavorite ? "favorite" : null,
+    ].filter(Boolean);
+
+    console.log(
+      `  ${collection.name}${meta.length ? `  (${meta.join(", ")})` : ""}`
+    );
+    console.log(`    ${collection.description ?? ""}`);
+
+    for (const { item } of collection.items) {
+      const flags =
+        `${item.isPinned ? "P" : " "}${item.isFavorite ? "F" : " "}`;
+      const type = item.itemType.name.padEnd(7);
+      const title = truncate(item.title, 38).padEnd(38);
+      const detail = item.url ?? item.tags.map((t) => t.name).join(", ");
+      console.log(`    ${flags}  ${type}  ${title}  ${truncate(detail, 60)}`);
+    }
+
+    console.log("");
+  }
 }
 
 async function main() {
@@ -103,6 +172,76 @@ async function main() {
     true,
     `users=${users} items=${items} collections=${collections} tags=${tags} itemCollections=${itemCollections}`
   );
+
+  // 5. Is the demo user there, and usable for credentials sign-in?
+  const demoUser = await prisma.user.findUnique({
+    where: { email: DEMO_EMAIL },
+  });
+  check(
+    "demo user",
+    demoUser !== null && demoUser.password !== null,
+    demoUser === null
+      ? `${DEMO_EMAIL} not found — run npm run db:seed`
+      : `${demoUser.name} <${demoUser.email}> isPro=${demoUser.isPro} ` +
+          `verified=${demoUser.emailVerified !== null} ` +
+          `password=${demoUser.password ? "hashed" : "MISSING"}`
+  );
+
+  if (!demoUser) {
+    console.log(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);
+    process.exit(1);
+  }
+
+  // 6. Fetch the demo content in one go — also exercises the relations
+  //    (item -> type, item -> tags, collection -> items) end to end.
+  const demoCollections = await fetchDemoCollections(demoUser.id);
+
+  const expectedNames = Object.keys(EXPECTED_COLLECTIONS).sort();
+  const actualNames = demoCollections.map((c) => c.name).sort();
+  const wrongCounts = demoCollections
+    .filter((c) => c.items.length !== EXPECTED_COLLECTIONS[c.name])
+    .map((c) => `${c.name}=${c.items.length}`);
+  check(
+    "demo collections",
+    actualNames.join("|") === expectedNames.join("|") && wrongCounts.length === 0,
+    actualNames.join("|") !== expectedNames.join("|")
+      ? `expected [${expectedNames.join(", ")}], got [${actualNames.join(", ")}]`
+      : wrongCounts.length > 0
+        ? `wrong item counts: ${wrongCounts.join(", ")}`
+        : `${demoCollections.length} collections, ` +
+          `${demoCollections.reduce((n, c) => n + c.items.length, 0)} items`
+  );
+
+  // 7. Every item should carry content appropriate to its contentType —
+  //    a link without a URL or a snippet without a body is a broken seed.
+  const demoItems = demoCollections.flatMap((c) => c.items.map((ic) => ic.item));
+  const emptyItems = demoItems
+    .filter((i) =>
+      i.contentType === "URL" ? !i.url : i.contentType === "TEXT" ? !i.content : false
+    )
+    .map((i) => i.title);
+  check(
+    "item content",
+    emptyItems.length === 0,
+    emptyItems.length === 0
+      ? `${demoItems.length} items have content for their contentType`
+      : `empty: ${emptyItems.join(", ")}`
+  );
+
+  // 8. Items only reachable through a collection would be invisible in
+  //    type-filtered views, so confirm the join table covers all of them.
+  const orphanItems = await prisma.item.count({
+    where: { userId: demoUser.id, collections: { none: {} } },
+  });
+  check(
+    "item membership",
+    orphanItems === 0,
+    orphanItems === 0
+      ? "every item belongs to at least one collection"
+      : `${orphanItems} item(s) in no collection`
+  );
+
+  printDemoData(demoCollections);
 
   console.log(
     failures.length === 0
