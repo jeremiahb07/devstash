@@ -1,6 +1,6 @@
 "use client";
 
-import { Layers, PanelLeft, Plus, Search } from "lucide-react";
+import { FolderPlus, Layers, PanelLeft, Plus, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,10 +32,16 @@ export function TopBar() {
           <Input placeholder="Search items..." className="pl-8" disabled />
         </div>
       </div>
-      <Button size="sm" className="ml-auto" disabled>
-        <Plus />
-        New Item
-      </Button>
+      <div className="ml-auto flex items-center gap-2">
+        <Button variant="outline" size="sm" disabled>
+          <FolderPlus />
+          New Collection
+        </Button>
+        <Button size="sm" disabled>
+          <Plus />
+          New Item
+        </Button>
+      </div>
     </header>
   );
 }
