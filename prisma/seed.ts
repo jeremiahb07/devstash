@@ -1,12 +1,18 @@
 import "dotenv/config";
 
 import { PrismaNeon } from "@prisma/adapter-neon";
+import { hash } from "bcryptjs";
 
 import { directConnectionString } from "../src/lib/db-url";
 import { PrismaClient } from "../src/generated/prisma/client";
+import type { ContentType } from "../src/generated/prisma/enums";
 
 const adapter = new PrismaNeon({ connectionString: directConnectionString() });
 const prisma = new PrismaClient({ adapter });
+
+const DEMO_EMAIL = "demo@devstash.io";
+const DEMO_PASSWORD = "12345678";
+const BCRYPT_ROUNDS = 12;
 
 const systemItemTypes = [
   { name: "snippet", icon: "Code", color: "#3b82f6", isSystem: true },
@@ -18,8 +24,359 @@ const systemItemTypes = [
   { name: "link", icon: "Link", color: "#10b981", isSystem: true },
 ];
 
-async function main() {
-  console.log("Seeding system item types...");
+type SystemTypeName = (typeof systemItemTypes)[number]["name"];
+
+type SeedItem = {
+  title: string;
+  type: SystemTypeName;
+  contentType: ContentType;
+  content?: string;
+  url?: string;
+  description?: string;
+  language?: string;
+  tags?: string[];
+  isPinned?: boolean;
+  isFavorite?: boolean;
+};
+
+type SeedCollection = {
+  name: string;
+  description: string;
+  /** Set only where every item in the collection shares one type. */
+  defaultType?: SystemTypeName;
+  isFavorite?: boolean;
+  items: SeedItem[];
+};
+
+const collections: SeedCollection[] = [
+  {
+    name: "React Patterns",
+    description: "Reusable React patterns and hooks",
+    defaultType: "snippet",
+    isFavorite: true,
+    items: [
+      {
+        title: "useDebounce hook",
+        type: "snippet",
+        contentType: "TEXT",
+        language: "typescript",
+        description:
+          "Delays updating a value until the input has settled — for search boxes and other rapid-fire inputs.",
+        tags: ["react", "hooks", "typescript"],
+        isPinned: true,
+        isFavorite: true,
+        content: `import { useEffect, useState } from 'react';
+
+export function useDebounce<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debounced;
+}`,
+      },
+      {
+        title: "Theme context provider",
+        type: "snippet",
+        contentType: "TEXT",
+        language: "typescript",
+        description:
+          "Context provider + typed consumer hook that throws when used outside the provider.",
+        tags: ["react", "context", "typescript"],
+        content: `'use client';
+
+import { createContext, useContext, useMemo, useState } from 'react';
+
+type Theme = 'light' | 'dark';
+
+interface ThemeContextValue {
+  theme: Theme;
+  toggle: () => void;
+}
+
+const ThemeContext = createContext<ThemeContextValue | null>(null);
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>('dark');
+
+  const value = useMemo(
+    () => ({
+      theme,
+      toggle: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')),
+    }),
+    [theme],
+  );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
+
+export function useTheme() {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error('useTheme must be used within a ThemeProvider');
+  return ctx;
+}`,
+      },
+      {
+        title: "cn() class name merger",
+        type: "snippet",
+        contentType: "TEXT",
+        language: "typescript",
+        description:
+          "Merges conditional class names and resolves conflicting Tailwind utilities. The shadcn/ui standard helper.",
+        tags: ["typescript", "tailwind", "utils"],
+        content: `import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}`,
+      },
+    ],
+  },
+  {
+    name: "AI Workflows",
+    description: "AI prompts and workflow automations",
+    defaultType: "prompt",
+    isFavorite: true,
+    items: [
+      {
+        title: "Thorough code review",
+        type: "prompt",
+        contentType: "TEXT",
+        description:
+          "Asks for a prioritized review instead of a wall of nitpicks.",
+        tags: ["code-review", "quality"],
+        isPinned: true,
+        content: `Review the following code change as a senior engineer on this team.
+
+Focus, in priority order:
+1. Correctness — logic errors, unhandled edge cases, race conditions.
+2. Security — auth checks, input validation, injection, leaked secrets.
+3. Performance — N+1 queries, unnecessary re-renders, blocking work.
+4. Consistency — does it match the patterns already in this codebase?
+
+For each finding: quote the exact line, explain the concrete failure it causes,
+and give the corrected code. Skip style nits the linter already catches.
+If the change is sound, say so plainly rather than inventing feedback.
+
+\`\`\`
+{{DIFF}}
+\`\`\``,
+      },
+      {
+        title: "Generate API documentation",
+        type: "prompt",
+        contentType: "TEXT",
+        description:
+          "Turns a module or route handler into reference docs with runnable examples.",
+        tags: ["documentation", "api"],
+        content: `Write reference documentation for the code below.
+
+Include:
+- A one-paragraph summary of what it does and when to reach for it.
+- Every parameter: name, type, whether it is required, default value.
+- The return shape, including error cases.
+- Two runnable examples — the common path and one edge case.
+
+Rules: document only what the code actually does — do not invent parameters or
+behavior. Use the same terminology the code uses. Output GitHub-flavored
+Markdown.
+
+\`\`\`
+{{CODE}}
+\`\`\``,
+      },
+      {
+        title: "Refactoring assistant",
+        type: "prompt",
+        contentType: "TEXT",
+        description:
+          "Behavior-preserving refactor with the reasoning made explicit.",
+        tags: ["refactoring", "quality"],
+        content: `Refactor the code below without changing its observable behavior.
+
+Goals: reduce duplication, shorten long functions, name things for what they
+mean, and push side effects to the edges.
+
+Constraints:
+- Keep the public API identical — same exports, same signatures.
+- Do not add dependencies.
+- Do not "improve" anything outside the code shown.
+
+Return: the refactored code, then a short list of each change and the specific
+problem it solves. If a piece is better left alone, say why.
+
+\`\`\`
+{{CODE}}
+\`\`\``,
+      },
+    ],
+  },
+  {
+    name: "DevOps",
+    description: "Infrastructure and deployment resources",
+    items: [
+      {
+        title: "Multi-stage Dockerfile for Next.js",
+        type: "snippet",
+        contentType: "TEXT",
+        language: "dockerfile",
+        description:
+          "Builds with full dependencies, ships only the standalone output.",
+        tags: ["docker", "nextjs", "deployment"],
+        content: `# syntax=docker/dockerfile:1
+
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+USER nextjs
+EXPOSE 3000
+CMD ["node", "server.js"]`,
+      },
+      {
+        title: "Migrate and deploy",
+        type: "command",
+        contentType: "TEXT",
+        language: "bash",
+        description:
+          "Apply pending migrations before the new build goes live — never the other way around.",
+        tags: ["deployment", "prisma"],
+        content: `npx prisma migrate deploy && npm run build && npm run start`,
+      },
+      {
+        title: "Docker Compose file reference",
+        type: "link",
+        contentType: "URL",
+        url: "https://docs.docker.com/reference/compose-file/",
+        description:
+          "Every key in compose.yaml, with the version each was introduced in.",
+        tags: ["docker", "reference"],
+      },
+      {
+        title: "GitHub Actions workflow syntax",
+        type: "link",
+        contentType: "URL",
+        url: "https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions",
+        description: "Triggers, jobs, matrix builds, and expression syntax.",
+        tags: ["ci-cd", "github", "reference"],
+      },
+    ],
+  },
+  {
+    name: "Terminal Commands",
+    description: "Useful shell commands for everyday development",
+    defaultType: "command",
+    items: [
+      {
+        title: "Undo last commit, keep the changes",
+        type: "command",
+        contentType: "TEXT",
+        language: "bash",
+        description:
+          "Moves HEAD back one commit and leaves the work staged. Use --hard only when you want the changes gone.",
+        tags: ["git"],
+        isFavorite: true,
+        content: `git reset --soft HEAD~1`,
+      },
+      {
+        title: "Remove all stopped containers and dangling images",
+        type: "command",
+        contentType: "TEXT",
+        language: "bash",
+        description:
+          "Reclaims disk after a few days of building. Add --volumes to also drop unused volumes.",
+        tags: ["docker", "cleanup"],
+        content: `docker system prune -af`,
+      },
+      {
+        title: "Find and kill whatever is on port 3000",
+        type: "command",
+        contentType: "TEXT",
+        language: "bash",
+        description:
+          "For the dev server that did not shut down cleanly. Windows: netstat -ano | findstr :3000, then taskkill /PID <pid> /F.",
+        tags: ["process", "debugging"],
+        isPinned: true,
+        content: `lsof -ti:3000 | xargs kill -9`,
+      },
+      {
+        title: "List packages that are behind",
+        type: "command",
+        contentType: "TEXT",
+        language: "bash",
+        description:
+          "Shows current vs wanted vs latest. Exits non-zero when anything is outdated, so guard it in CI.",
+        tags: ["npm", "dependencies"],
+        content: `npm outdated --long`,
+      },
+    ],
+  },
+  {
+    name: "Design Resources",
+    description: "UI/UX resources and references",
+    defaultType: "link",
+    items: [
+      {
+        title: "Tailwind CSS documentation",
+        type: "link",
+        contentType: "URL",
+        url: "https://tailwindcss.com/docs",
+        description:
+          "Utility reference plus the v4 CSS-first configuration guide.",
+        tags: ["css", "tailwind", "reference"],
+        isFavorite: true,
+      },
+      {
+        title: "shadcn/ui components",
+        type: "link",
+        contentType: "URL",
+        url: "https://ui.shadcn.com/docs/components",
+        description:
+          "Copy-in components built on Radix primitives and Tailwind.",
+        tags: ["components", "react", "tailwind"],
+      },
+      {
+        title: "Radix UI primitives",
+        type: "link",
+        contentType: "URL",
+        url: "https://www.radix-ui.com/primitives/docs/overview/introduction",
+        description:
+          "Unstyled, accessible primitives — the behavior layer under most modern component libraries.",
+        tags: ["components", "accessibility", "design-system"],
+      },
+      {
+        title: "Lucide icon library",
+        type: "link",
+        contentType: "URL",
+        url: "https://lucide.dev/icons/",
+        description:
+          "Searchable index of every Lucide icon. The icon set DevStash uses for item types.",
+        tags: ["icons", "design-system"],
+      },
+    ],
+  },
+];
+
+async function seedSystemItemTypes() {
+  const typeIds = new Map<SystemTypeName, string>();
 
   for (const type of systemItemTypes) {
     // System types have userId = null. Postgres treats NULLs in a unique
@@ -29,14 +386,96 @@ async function main() {
       where: { name: type.name, userId: null },
     });
 
-    if (existing) {
-      await prisma.itemType.update({ where: { id: existing.id }, data: type });
-    } else {
-      await prisma.itemType.create({ data: type });
+    const record = existing
+      ? await prisma.itemType.update({ where: { id: existing.id }, data: type })
+      : await prisma.itemType.create({ data: type });
+
+    typeIds.set(type.name, record.id);
+  }
+
+  return typeIds;
+}
+
+async function seedDemoUser() {
+  const password = await hash(DEMO_PASSWORD, BCRYPT_ROUNDS);
+
+  return prisma.user.upsert({
+    where: { email: DEMO_EMAIL },
+    update: { name: "Demo User", password, isPro: false },
+    create: {
+      email: DEMO_EMAIL,
+      name: "Demo User",
+      password,
+      isPro: false,
+      emailVerified: new Date(),
+    },
+  });
+}
+
+async function main() {
+  console.log("Seeding system item types...");
+  const typeIds = await seedSystemItemTypes();
+
+  console.log(`Seeding demo user (${DEMO_EMAIL})...`);
+  const user = await seedDemoUser();
+
+  // Make the seed re-runnable: clear this user's content and rebuild it.
+  // Item -> ItemCollection and Item -> Tag rows go with the items.
+  console.log("Clearing existing demo content...");
+  await prisma.item.deleteMany({ where: { userId: user.id } });
+  await prisma.collection.deleteMany({ where: { userId: user.id } });
+
+  console.log("Seeding collections and items...");
+  let itemCount = 0;
+
+  for (const collection of collections) {
+    const created = await prisma.collection.create({
+      data: {
+        name: collection.name,
+        description: collection.description,
+        isFavorite: collection.isFavorite ?? false,
+        userId: user.id,
+        defaultTypeId: collection.defaultType
+          ? typeIds.get(collection.defaultType)
+          : null,
+      },
+    });
+
+    for (const item of collection.items) {
+      const itemTypeId = typeIds.get(item.type);
+      if (!itemTypeId) throw new Error(`Unknown item type: ${item.type}`);
+
+      await prisma.item.create({
+        data: {
+          title: item.title,
+          contentType: item.contentType,
+          content: item.content ?? null,
+          url: item.url ?? null,
+          description: item.description ?? null,
+          language: item.language ?? null,
+          isPinned: item.isPinned ?? false,
+          isFavorite: item.isFavorite ?? false,
+          userId: user.id,
+          itemTypeId,
+          tags: {
+            connectOrCreate: (item.tags ?? []).map((name) => ({
+              where: { name },
+              create: { name },
+            })),
+          },
+          collections: {
+            create: { collectionId: created.id },
+          },
+        },
+      });
+
+      itemCount += 1;
     }
   }
 
-  console.log("Seeding complete!");
+  console.log(
+    `Seeding complete! ${collections.length} collections, ${itemCount} items.`,
+  );
 }
 
 main()
