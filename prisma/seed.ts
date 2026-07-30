@@ -14,6 +14,22 @@ const DEMO_EMAIL = "demo@devstash.io";
 const DEMO_PASSWORD = "12345678";
 const BCRYPT_ROUNDS = 12;
 
+/** Gap between consecutive seeded rows. */
+const SEED_INTERVAL_MS = 60_000;
+
+/** Captured once so every row in a run is spaced off the same instant. */
+const SEED_START = Date.now();
+
+/**
+ * Rows are written in parallel, so the database can't be relied on to stamp
+ * them in source order. Space the timestamps explicitly instead — index 0 the
+ * oldest, the last index landing on the start of the run — so anything ordered
+ * by recency reads the same after every seed, whichever write finishes first.
+ */
+function seedTimestamp(index: number, total: number) {
+  return new Date(SEED_START - (total - 1 - index) * SEED_INTERVAL_MS);
+}
+
 const systemItemTypes = [
   { name: "snippet", icon: "Code", color: "#3b82f6", isSystem: true },
   { name: "prompt", icon: "Sparkles", color: "#8b5cf6", isSystem: true },
@@ -376,24 +392,28 @@ CMD ["node", "server.js"]`,
 ];
 
 async function seedSystemItemTypes() {
-  const typeIds = new Map<SystemTypeName, string>();
+  // Each type has its own name, so these can't collide with one another.
+  const entries = await Promise.all(
+    systemItemTypes.map(async (type) => {
+      // System types have userId = null. Postgres treats NULLs in a unique
+      // constraint as distinct, so `upsert` on [name, userId] can't match an
+      // existing row here — find it explicitly instead.
+      const existing = await prisma.itemType.findFirst({
+        where: { name: type.name, userId: null },
+      });
 
-  for (const type of systemItemTypes) {
-    // System types have userId = null. Postgres treats NULLs in a unique
-    // constraint as distinct, so `upsert` on [name, userId] can't match an
-    // existing row here — find it explicitly instead.
-    const existing = await prisma.itemType.findFirst({
-      where: { name: type.name, userId: null },
-    });
+      const record = existing
+        ? await prisma.itemType.update({
+            where: { id: existing.id },
+            data: type,
+          })
+        : await prisma.itemType.create({ data: type });
 
-    const record = existing
-      ? await prisma.itemType.update({ where: { id: existing.id }, data: type })
-      : await prisma.itemType.create({ data: type });
+      return [type.name, record.id] as const;
+    }),
+  );
 
-    typeIds.set(type.name, record.id);
-  }
-
-  return typeIds;
+  return new Map<SystemTypeName, string>(entries);
 }
 
 async function seedDemoUser() {
@@ -413,11 +433,11 @@ async function seedDemoUser() {
 }
 
 async function main() {
-  console.log("Seeding system item types...");
-  const typeIds = await seedSystemItemTypes();
-
-  console.log(`Seeding demo user (${DEMO_EMAIL})...`);
-  const user = await seedDemoUser();
+  console.log(`Seeding system item types and demo user (${DEMO_EMAIL})...`);
+  const [typeIds, user] = await Promise.all([
+    seedSystemItemTypes(),
+    seedDemoUser(),
+  ]);
 
   // Make the seed re-runnable: clear this user's content and rebuild it.
   // Item -> ItemCollection and Item -> Tag rows go with the items.
@@ -426,26 +446,57 @@ async function main() {
   await prisma.collection.deleteMany({ where: { userId: user.id } });
 
   console.log("Seeding collections and items...");
-  let itemCount = 0;
 
-  for (const collection of collections) {
-    const created = await prisma.collection.create({
-      data: {
-        name: collection.name,
-        description: collection.description,
-        isFavorite: collection.isFavorite ?? false,
-        userId: user.id,
-        defaultTypeId: collection.defaultType
-          ? typeIds.get(collection.defaultType)
-          : null,
-      },
-    });
+  // Tags are shared across items, so create them up front and `connect` below.
+  // Left to `connectOrCreate` on parallel writes, two items sharing a tag would
+  // race on the unique name and one would fail.
+  const tagNames = [
+    ...new Set(
+      collections.flatMap((collection) =>
+        collection.items.flatMap((item) => item.tags ?? []),
+      ),
+    ),
+  ];
 
-    for (const item of collection.items) {
+  await prisma.tag.createMany({
+    data: tagNames.map((name) => ({ name })),
+    skipDuplicates: true,
+  });
+
+  const created = await Promise.all(
+    collections.map((collection, index) => {
+      const timestamp = seedTimestamp(index, collections.length);
+
+      return prisma.collection.create({
+        data: {
+          name: collection.name,
+          description: collection.description,
+          isFavorite: collection.isFavorite ?? false,
+          userId: user.id,
+          defaultTypeId: collection.defaultType
+            ? typeIds.get(collection.defaultType)
+            : null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      });
+    }),
+  );
+
+  // Flatten to one list so every item is written in a single round of writes
+  // rather than one collection's worth at a time.
+  const items = collections.flatMap((collection, index) =>
+    collection.items.map((item) => ({ item, collectionId: created[index].id })),
+  );
+
+  await Promise.all(
+    items.map(({ item, collectionId }, index) => {
       const itemTypeId = typeIds.get(item.type);
       if (!itemTypeId) throw new Error(`Unknown item type: ${item.type}`);
 
-      await prisma.item.create({
+      const timestamp = seedTimestamp(index, items.length);
+
+      return prisma.item.create({
         data: {
           title: item.title,
           contentType: item.contentType,
@@ -457,24 +508,21 @@ async function main() {
           isFavorite: item.isFavorite ?? false,
           userId: user.id,
           itemTypeId,
+          createdAt: timestamp,
+          updatedAt: timestamp,
           tags: {
-            connectOrCreate: (item.tags ?? []).map((name) => ({
-              where: { name },
-              create: { name },
-            })),
+            connect: (item.tags ?? []).map((name) => ({ name })),
           },
           collections: {
-            create: { collectionId: created.id },
+            create: { collectionId, addedAt: timestamp },
           },
         },
       });
-
-      itemCount += 1;
-    }
-  }
+    }),
+  );
 
   console.log(
-    `Seeding complete! ${collections.length} collections, ${itemCount} items.`,
+    `Seeding complete! ${collections.length} collections, ${items.length} items.`,
   );
 }
 
