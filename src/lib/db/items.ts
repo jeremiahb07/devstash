@@ -21,12 +21,36 @@ export interface ItemSummary {
   type: ItemTypeSummary;
 }
 
+/** An item type plus how many of the user's items use it — the sidebar's rows. */
+export interface ItemTypeWithCount extends ItemTypeSummary {
+  itemCount: number;
+}
+
 export interface ItemStats {
   total: number;
   favorites: number;
 }
 
 const RECENT_ITEMS_LIMIT = 10;
+
+/**
+ * Display order for the system types. They have no ordering column, so the
+ * sidebar's order is pinned here; custom types sort after them, alphabetically.
+ */
+const SYSTEM_TYPE_ORDER = [
+  "snippet",
+  "prompt",
+  "command",
+  "note",
+  "file",
+  "image",
+  "link",
+];
+
+function typeOrder(name: string): number {
+  const index = SYSTEM_TYPE_ORDER.indexOf(name);
+  return index === -1 ? SYSTEM_TYPE_ORDER.length : index;
+}
 
 /** Everything an item row renders — shared by the pinned and recent queries. */
 const itemSummarySelect = {
@@ -87,6 +111,53 @@ export async function getRecentItems(
   });
 
   return items.map(toItemSummary);
+}
+
+/**
+ * Every item type available to the current user — the seven system types plus
+ * any custom ones — with the number of the user's items using each.
+ *
+ * The counts are filtered relation counts, so this stays a single query. Unlike
+ * the other fetchers this still returns the system types when there is no user,
+ * because the sidebar's type list is navigation rather than data.
+ */
+export async function getItemTypesWithCounts(): Promise<ItemTypeWithCount[]> {
+  const userId = await getCurrentUserId();
+
+  if (!userId) {
+    const types = await prisma.itemType.findMany({
+      where: { userId: null },
+      select: { id: true, name: true, color: true },
+    });
+
+    return sortItemTypes(types.map((type) => ({ ...type, itemCount: 0 })));
+  }
+
+  const types = await prisma.itemType.findMany({
+    // System types are shared (no owner); custom ones belong to the user.
+    where: { OR: [{ userId: null }, { userId }] },
+    select: {
+      id: true,
+      name: true,
+      color: true,
+      _count: { select: { items: { where: { userId } } } },
+    },
+  });
+
+  return sortItemTypes(
+    types.map(({ id, name, color, _count }) => ({
+      id,
+      name,
+      color,
+      itemCount: _count.items,
+    }))
+  );
+}
+
+function sortItemTypes(types: ItemTypeWithCount[]): ItemTypeWithCount[] {
+  return types.sort(
+    (a, b) => typeOrder(a.name) - typeOrder(b.name) || a.name.localeCompare(b.name)
+  );
 }
 
 /** Item totals for the dashboard stats cards. */

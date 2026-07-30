@@ -19,23 +19,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ITEM_TYPE_ICONS, itemTypeRoute } from "@/lib/constants/item-types";
-import { collections, currentUser, items, itemTypes } from "@/lib/mock-data";
+import type { CollectionSummary, SidebarCollections } from "@/lib/db/collections";
+import type { ItemTypeWithCount } from "@/lib/db/items";
+import { currentUser } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/hooks/use-sidebar";
 
-const favoriteCollections = collections.filter((collection) => collection.isFavorite);
-const recentCollections = collections
-  .filter((collection) => !collection.isFavorite)
-  .slice()
-  .reverse()
-  .slice(0, 5);
-
-function itemCountForType(typeId: string) {
-  return items.filter((item) => item.itemTypeId === typeId).length;
-}
-
-function itemCountForCollection(collectionId: string) {
-  return items.filter((item) => item.collectionIds.includes(collectionId)).length;
+export interface SidebarProps {
+  itemTypes: ItemTypeWithCount[];
+  collections: SidebarCollections;
 }
 
 function getInitials(name: string) {
@@ -47,10 +39,16 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-function TypesSection({ collapsed }: { collapsed: boolean }) {
-  const typeLinks = itemTypes.map((type) => {
+function TypesSection({
+  types,
+  collapsed,
+}: {
+  types: ItemTypeWithCount[];
+  collapsed: boolean;
+}) {
+  const typeLinks = types.map((type) => {
     const Icon = ITEM_TYPE_ICONS[type.name];
-    const count = itemCountForType(type.id);
+    const count = type.itemCount;
     const link = (
       <Link
         href={itemTypeRoute(type.name)}
@@ -94,7 +92,30 @@ function TypesSection({ collapsed }: { collapsed: boolean }) {
 }
 
 
-function CollectionsSection() {
+function CollectionLink({
+  collection,
+  children,
+}: {
+  collection: CollectionSummary;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={`/collections/${collection.id}`}
+      className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+    >
+      <span className="flex min-w-0 items-center gap-3">
+        <span className="truncate">{collection.name}</span>
+      </span>
+      {children}
+    </Link>
+  );
+}
+
+function CollectionsSection({ collections }: { collections: SidebarCollections }) {
+  const { favorites, recent } = collections;
+  const isEmpty = favorites.length === 0 && recent.length === 0;
+
   return (
     <Collapsible defaultOpen>
       <CollapsibleTrigger className="group inline-flex items-center gap-1 px-1 py-2 text-xs font-medium text-muted-foreground hover:text-foreground">
@@ -102,47 +123,49 @@ function CollectionsSection() {
         <ChevronDown className="size-3.5 transition-transform group-data-panel-open:rotate-180" />
       </CollapsibleTrigger>
       <CollapsibleContent className="mt-1 space-y-3">
-        {favoriteCollections.length > 0 && (
+        {favorites.length > 0 && (
           <div className="space-y-0.5">
             <p className="px-2 text-[0.80rem] font-medium tracking-wide text-muted-foreground">
               Favorites
             </p>
-            {favoriteCollections.map((collection) => (
-              <Link
-                key={collection.id}
-                href={`/collections/${collection.id}`}
-                className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-              >
-                <span className="flex min-w-0 items-center gap-3">
-                  <span className="truncate">{collection.name}</span>
-                </span>
+            {favorites.map((collection) => (
+              <CollectionLink key={collection.id} collection={collection}>
                 <Star className="size-3.5 shrink-0 fill-yellow-400 text-yellow-400" />
-              </Link>
+              </CollectionLink>
             ))}
           </div>
         )}
 
-        {recentCollections.length > 0 && (
+        {recent.length > 0 && (
           <div className="space-y-0.5">
             <p className="px-2 text-[0.80rem] font-medium tracking-wide text-muted-foreground">
               Recent
             </p>
-            {recentCollections.map((collection) => (
-              <Link
-                key={collection.id}
-                href={`/collections/${collection.id}`}
-                className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-              >
-                <span className="flex min-w-0 items-center gap-3">
-                  <span className="truncate">{collection.name}</span>
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {itemCountForCollection(collection.id)}
-                </span>
-              </Link>
+            {recent.map((collection) => (
+              <CollectionLink key={collection.id} collection={collection}>
+                {/* Dot tinted by the collection's most-used item type. */}
+                <span
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{
+                    backgroundColor: collection.accentColor ?? "var(--border)",
+                  }}
+                  aria-hidden
+                />
+              </CollectionLink>
             ))}
           </div>
         )}
+
+        {isEmpty && (
+          <p className="px-2 text-sm text-muted-foreground">No collections yet</p>
+        )}
+
+        <Link
+          href="/collections"
+          className="block rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          View all collections
+        </Link>
       </CollapsibleContent>
     </Collapsible>
   );
@@ -177,7 +200,12 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function SidebarNav({ collapsed, showToggle }: { collapsed: boolean; showToggle?: boolean }) {
+function SidebarNav({
+  itemTypes,
+  collections,
+  collapsed,
+  showToggle,
+}: SidebarProps & { collapsed: boolean; showToggle?: boolean }) {
   const { toggleSidebar } = useSidebar();
 
   return (
@@ -202,11 +230,11 @@ function SidebarNav({ collapsed, showToggle }: { collapsed: boolean; showToggle?
           )}
         </div>
         <nav className="flex-1 space-y-4 overflow-y-auto p-3">
-          <TypesSection collapsed={collapsed} />
+          <TypesSection types={itemTypes} collapsed={collapsed} />
           {!collapsed && (
             <>
               <Separator />
-              <CollectionsSection />
+              <CollectionsSection collections={collections} />
             </>
           )}
         </nav>
@@ -216,7 +244,7 @@ function SidebarNav({ collapsed, showToggle }: { collapsed: boolean; showToggle?
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ itemTypes, collections }: SidebarProps) {
   const { collapsed, mobileOpen, setMobileOpen } = useSidebar();
 
   return (
@@ -227,13 +255,22 @@ export function Sidebar() {
           collapsed ? "w-16" : "w-56"
         )}
       >
-        <SidebarNav collapsed={collapsed} showToggle />
+        <SidebarNav
+          itemTypes={itemTypes}
+          collections={collections}
+          collapsed={collapsed}
+          showToggle
+        />
       </aside>
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-56 p-0">
           <SheetTitle className="sr-only">Sidebar</SheetTitle>
-          <SidebarNav collapsed={false} />
+          <SidebarNav
+            itemTypes={itemTypes}
+            collections={collections}
+            collapsed={false}
+          />
         </SheetContent>
       </Sheet>
     </>
