@@ -3,20 +3,14 @@ import { Star } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ITEM_TYPE_ICONS } from "@/lib/constants/item-types";
-import { collections, items, itemTypes, type MockCollection } from "@/lib/mock-data";
+import type { CollectionSummary } from "@/lib/db/collections";
 
-function CollectionCard({ collection }: { collection: MockCollection }) {
-  const defaultType = itemTypes.find((type) => type.id === collection.defaultTypeId);
-  const collectionItems = items.filter((item) => item.collectionIds.includes(collection.id));
-  const typesInCollection = Array.from(new Set(collectionItems.map((item) => item.itemTypeId)))
-    .map((typeId) => itemTypes.find((type) => type.id === typeId))
-    .filter((type): type is NonNullable<typeof type> => Boolean(type));
-
+function CollectionCard({ collection }: { collection: CollectionSummary }) {
   return (
     <Link href={`/collections/${collection.id}`} className="block">
       <Card
         className="h-full border-l-4 transition-colors hover:bg-muted/50"
-        style={{ borderLeftColor: defaultType?.color ?? "var(--border)" }}
+        style={{ borderLeftColor: collection.accentColor ?? "var(--border)" }}
       >
         <CardHeader>
           <CardTitle className="flex items-center gap-1.5">
@@ -27,14 +21,23 @@ function CollectionCard({ collection }: { collection: MockCollection }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">{collectionItems.length} items</p>
-          <p className="text-sm text-muted-foreground">{collection.description}</p>
-          {typesInCollection.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {collection.itemCount} {collection.itemCount === 1 ? "item" : "items"}
+          </p>
+          {collection.description && (
+            <p className="text-sm text-muted-foreground">{collection.description}</p>
+          )}
+          {collection.types.length > 0 && (
             <div className="flex items-center gap-2">
-              {typesInCollection.map((type) => {
+              {collection.types.map((type) => {
                 const Icon = ITEM_TYPE_ICONS[type.name];
                 return Icon ? (
-                  <Icon key={type.id} className="size-4" style={{ color: type.color }} />
+                  <Icon
+                    key={type.id}
+                    className="size-4"
+                    style={{ color: type.color }}
+                    aria-label={`${type.count} ${type.name}${type.count === 1 ? "" : "s"}`}
+                  />
                 ) : null;
               })}
             </div>
@@ -45,7 +48,11 @@ function CollectionCard({ collection }: { collection: MockCollection }) {
   );
 }
 
-export function CollectionsSection() {
+export function CollectionsSection({
+  collections,
+}: {
+  collections: CollectionSummary[];
+}) {
   return (
     <section>
       <div className="flex items-center justify-between">
@@ -54,11 +61,17 @@ export function CollectionsSection() {
           View all
         </Link>
       </div>
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {collections.map((collection) => (
-          <CollectionCard key={collection.id} collection={collection} />
-        ))}
-      </div>
+      {collections.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          No collections yet. Create one to start organizing your items.
+        </p>
+      ) : (
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {collections.map((collection) => (
+            <CollectionCard key={collection.id} collection={collection} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
