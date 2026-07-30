@@ -29,6 +29,13 @@ export const ITEM_TYPE_COLORS: Record<string, string> = {
   link: "#10b981",
 };
 
+// Item types gated behind the Pro tier (see context/project-overview.md).
+export const PRO_ITEM_TYPES = new Set(["file", "image"]);
+
+export function isProItemType(name: string) {
+  return PRO_ITEM_TYPES.has(name);
+}
+
 export function itemTypeRoute(name: string) {
   return `/items/${name}s`;
 }
