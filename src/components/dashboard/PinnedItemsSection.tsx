@@ -1,12 +1,10 @@
 import { Pin } from "lucide-react";
 
 import { ItemRow } from "@/components/dashboard/ItemRow";
-import { items } from "@/lib/mock-data";
+import type { ItemSummary } from "@/lib/db/items";
 
-export function PinnedItemsSection() {
-  const pinnedItems = items.filter((item) => item.isPinned);
-
-  if (pinnedItems.length === 0) {
+export function PinnedItemsSection({ items }: { items: ItemSummary[] }) {
+  if (items.length === 0) {
     return null;
   }
 
@@ -17,7 +15,7 @@ export function PinnedItemsSection() {
         <h2 className="text-lg font-semibold">Pinned</h2>
       </div>
       <div className="mt-4 space-y-3">
-        {pinnedItems.map((item) => (
+        {items.map((item) => (
           <ItemRow key={item.id} item={item} />
         ))}
       </div>
