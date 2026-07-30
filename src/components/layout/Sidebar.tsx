@@ -178,16 +178,18 @@ function CollectionsSection({ collections }: { collections: SidebarCollections }
           </div>
         )}
 
-        {isEmpty && (
-          <p className="px-2 text-sm text-muted-foreground">No collections yet</p>
+        {isEmpty ? (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">
+            No collections yet
+          </p>
+        ) : (
+          <Link
+            href="/collections"
+            className="block rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            View all collections
+          </Link>
         )}
-
-        <Link
-          href="/collections"
-          className="block rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          View all collections
-        </Link>
       </CollapsibleContent>
     </Collapsible>
   );
