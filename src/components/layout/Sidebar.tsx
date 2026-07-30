@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChevronDown, PanelLeft, Settings, Star } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -18,7 +19,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ITEM_TYPE_ICONS, itemTypeRoute } from "@/lib/constants/item-types";
+import {
+  ITEM_TYPE_ICONS,
+  isProItemType,
+  itemTypeRoute,
+} from "@/lib/constants/item-types";
 import type { CollectionSummary, SidebarCollections } from "@/lib/db/collections";
 import type { ItemTypeWithCount } from "@/lib/db/items";
 import { currentUser } from "@/lib/mock-data";
@@ -39,6 +44,17 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
+function ProBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className="h-4 px-1.5 text-[10px] tracking-wide text-muted-foreground uppercase"
+    >
+      PRO
+    </Badge>
+  );
+}
+
 function TypesSection({
   types,
   collapsed,
@@ -49,6 +65,7 @@ function TypesSection({
   const typeLinks = types.map((type) => {
     const Icon = ITEM_TYPE_ICONS[type.name];
     const count = type.itemCount;
+    const isPro = isProItemType(type.name);
     const link = (
       <Link
         href={itemTypeRoute(type.name)}
@@ -59,7 +76,12 @@ function TypesSection({
       >
         <span className="flex min-w-0 items-center gap-3">
           {Icon && <Icon className="size-4 shrink-0" style={{ color: type.color }} />}
-          {!collapsed && <span className="truncate">{type.name}s</span>}
+          {!collapsed && (
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate">{type.name}s</span>
+              {isPro && <ProBadge />}
+            </span>
+          )}
         </span>
         {!collapsed && <span className="text-xs text-muted-foreground">{count}</span>}
       </Link>
@@ -73,7 +95,7 @@ function TypesSection({
       <Tooltip key={type.id}>
         <TooltipTrigger render={link} />
         <TooltipContent side="right">
-          {type.name}s ({count})
+          {type.name}s ({count}){isPro && " · PRO"}
         </TooltipContent>
       </Tooltip>
     );
