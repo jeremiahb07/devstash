@@ -2,13 +2,18 @@ import { CollectionsSection } from "@/components/dashboard/CollectionsSection";
 import { PinnedItemsSection } from "@/components/dashboard/PinnedItemsSection";
 import { RecentItemsSection } from "@/components/dashboard/RecentItemsSection";
 import { StatsCards } from "@/components/dashboard/StatsCards";
-import { collections, items } from "@/lib/mock-data";
+import { getCollectionStats, getRecentCollections } from "@/lib/db/collections";
+import { items } from "@/lib/mock-data";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const [collections, collectionStats] = await Promise.all([
+    getRecentCollections(),
+    getCollectionStats(),
+  ]);
+
+  // Items are still mock data — they move to the database in a later feature.
   const totalItems = items.length;
-  const totalCollections = collections.length;
   const favoriteItems = items.filter((item) => item.isFavorite).length;
-  const favoriteCollections = collections.filter((collection) => collection.isFavorite).length;
 
   return (
     <div className="space-y-8">
@@ -18,11 +23,11 @@ export default function DashboardPage() {
       </div>
       <StatsCards
         totalItems={totalItems}
-        totalCollections={totalCollections}
+        totalCollections={collectionStats.total}
         favoriteItems={favoriteItems}
-        favoriteCollections={favoriteCollections}
+        favoriteCollections={collectionStats.favorites}
       />
-      <CollectionsSection />
+      <CollectionsSection collections={collections} />
       <PinnedItemsSection />
       <RecentItemsSection />
     </div>
