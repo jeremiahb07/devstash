@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/db/user";
+import type { Prisma } from "@/generated/prisma/client";
 
 /** One item type present in a collection, with how many items use it. */
 export interface CollectionTypeSummary {
@@ -27,7 +28,37 @@ export interface CollectionStats {
   favorites: number;
 }
 
+/** The sidebar's two collection groups. */
+export interface SidebarCollections {
+  favorites: CollectionSummary[];
+  recent: CollectionSummary[];
+}
+
 const RECENT_COLLECTIONS_LIMIT = 6;
+const SIDEBAR_COLLECTIONS_LIMIT = 5;
+
+/** Everything a collection card or sidebar row renders. */
+const collectionSummarySelect = {
+  id: true,
+  name: true,
+  description: true,
+  isFavorite: true,
+  _count: { select: { items: true } },
+  defaultType: { select: { color: true } },
+  items: {
+    select: {
+      item: {
+        select: {
+          itemType: { select: { id: true, name: true, color: true } },
+        },
+      },
+    },
+  },
+} satisfies Prisma.CollectionSelect;
+
+type CollectionSummaryRow = Prisma.CollectionGetPayload<{
+  select: typeof collectionSummarySelect;
+}>;
 
 /**
  * Item types in a collection, ordered by how many items use each one. Ties
@@ -54,6 +85,22 @@ function summarizeTypes(
   );
 }
 
+function toCollectionSummary(collection: CollectionSummaryRow): CollectionSummary {
+  const types = summarizeTypes(collection.items);
+
+  return {
+    id: collection.id,
+    name: collection.name,
+    description: collection.description,
+    isFavorite: collection.isFavorite,
+    itemCount: collection._count.items,
+    types,
+    // An empty collection has no most-used type — fall back to its default
+    // type so the card still reads as belonging to that type.
+    accentColor: types[0]?.color ?? collection.defaultType?.color ?? null,
+  };
+}
+
 /**
  * The most recently updated collections for the current user, with the item
  * count and type breakdown each card needs.
@@ -71,40 +118,43 @@ export async function getRecentCollections(
     where: { userId },
     orderBy: { updatedAt: "desc" },
     take: limit,
-    select: {
-      id: true,
-      name: true,
-      description: true,
-      isFavorite: true,
-      _count: { select: { items: true } },
-      defaultType: { select: { color: true } },
-      items: {
-        select: {
-          item: {
-            select: {
-              itemType: { select: { id: true, name: true, color: true } },
-            },
-          },
-        },
-      },
-    },
+    select: collectionSummarySelect,
   });
 
-  return collections.map((collection) => {
-    const types = summarizeTypes(collection.items);
+  return collections.map(toCollectionSummary);
+}
 
-    return {
-      id: collection.id,
-      name: collection.name,
-      description: collection.description,
-      isFavorite: collection.isFavorite,
-      itemCount: collection._count.items,
-      types,
-      // An empty collection has no most-used type — fall back to its default
-      // type so the card still reads as belonging to that type.
-      accentColor: types[0]?.color ?? collection.defaultType?.color ?? null,
-    };
-  });
+/**
+ * The sidebar's collection groups: the user's favorites, and their most
+ * recently updated non-favorite collections. Split into two queries so each
+ * group gets its own limit; favorites are excluded from Recent so a collection
+ * never appears twice.
+ */
+export async function getSidebarCollections(
+  limit: number = SIDEBAR_COLLECTIONS_LIMIT
+): Promise<SidebarCollections> {
+  const userId = await getCurrentUserId();
+  if (!userId) return { favorites: [], recent: [] };
+
+  const [favorites, recent] = await Promise.all([
+    prisma.collection.findMany({
+      where: { userId, isFavorite: true },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+      select: collectionSummarySelect,
+    }),
+    prisma.collection.findMany({
+      where: { userId, isFavorite: false },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+      select: collectionSummarySelect,
+    }),
+  ]);
+
+  return {
+    favorites: favorites.map(toCollectionSummary),
+    recent: recent.map(toCollectionSummary),
+  };
 }
 
 /** Collection totals for the dashboard stats cards. */
