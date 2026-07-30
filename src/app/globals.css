@@ -125,5 +125,8 @@
     }
   html {
     @apply font-sans;
+    /* The browser's default track renders light, which reads as a white strip
+       against the dark theme. Inherited, so every scroll container picks it up. */
+    scrollbar-color: var(--muted) var(--background);
     }
 }
