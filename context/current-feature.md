@@ -1,20 +1,33 @@
-# Current Feature
-
-<!-- Feature Name -->
+# Current Feature: Auth Credentials — Email/Password Provider (phase 2 of 3)
 
 ## Status
 
 <!-- Not Started|In Progress|Completed -->
 
-Not Started
+In Progress
 
 ## Goals
 
 <!-- Goals & requirements -->
 
+- Add a Credentials provider to `src/auth.config.ts` as an edge-safe placeholder (`authorize: () => null`) — no bcrypt, no Prisma in the shared config.
+- Override that Credentials provider in `src/auth.ts` with the real `authorize`: look the user up by email via Prisma, compare the password with `bcryptjs`, return the user or `null`.
+- Confirm the `User.password` column exists; add a migration only if it doesn't (`npx prisma migrate dev`, never `db push`).
+- Build the registration API route at `src/app/api/auth/register/route.ts` — `POST` accepting `name`, `email`, `password`, `confirmPassword`; validate the passwords match, reject a duplicate email, hash with bcryptjs, create the user, return a success/error response.
+- Verify end to end: register via curl, sign in with those credentials at `/api/auth/signin`, land on `/dashboard`, and confirm GitHub OAuth from phase 1 still works.
+
 ## Notes
 
 <!-- Any extra notes -->
+
+- Spec: `context/features/auth-phase-2-spec.md`.
+- `User.password` is already `String?` in `prisma/schema.prisma:23` (it has been there since the initial migration, and the seed script bcrypt-hashes the demo user's password at 12 rounds), so no schema change or migration is expected — match those 12 rounds in the register route.
+- Phase 1 deliberately spread `auth.ts` as `{ ...authConfig, adapter, session }` so the override in this phase actually takes effect rather than being clobbered by the shared config.
+- `src/proxy.ts` builds its own adapter-free NextAuth instance from `auth.config.ts`, so whatever lands there must stay free of Prisma and bcrypt — the placeholder is what keeps the proxy bundle clean.
+- Session strategy is JWT, so the Credentials provider works without a database session; `auth.ts` already carries the `session` callback that copies `token.sub` onto `session.user.id`.
+- Validate the request body with Zod per `context/coding-standards.md`, and return the `{ success, data, error }` shape.
+- Registration is an API route (not a Server Action) per the spec, which also fits the standards' "specific HTTP status codes" case — never return the password hash in the response.
+- Still out of scope, as in phase 1: `getCurrentUserId()` in `src/lib/db/user.ts` remains hardcoded to `demo@devstash.io`; phase 3 owns wiring the session through to the dashboard.
 
 
 ## History
