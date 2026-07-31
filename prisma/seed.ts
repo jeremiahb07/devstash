@@ -14,6 +14,21 @@ const DEMO_EMAIL = "demo@devstash.io";
 const DEMO_PASSWORD = "12345678";
 const BCRYPT_ROUNDS = 12;
 
+/**
+ * Which account the sample content belongs to. Defaults to the demo user, so
+ * a plain `npm run db:seed` behaves exactly as it always has.
+ *
+ * Override it to load the same content into an account you actually sign in
+ * with — a GitHub login, say — so the dashboard has something to show:
+ *
+ *   SEED_USER_EMAIL=you@example.com npm run db:seed
+ *
+ * The account has to exist already in that case; the seed owns the content,
+ * not the account.
+ */
+const SEED_EMAIL =
+  process.env.SEED_USER_EMAIL?.trim().toLowerCase() || DEMO_EMAIL;
+
 /** Gap between consecutive seeded rows. */
 const SEED_INTERVAL_MS = 60_000;
 
@@ -416,7 +431,23 @@ async function seedSystemItemTypes() {
   return new Map<SystemTypeName, string>(entries);
 }
 
-async function seedDemoUser() {
+async function seedUser() {
+  if (SEED_EMAIL !== DEMO_EMAIL) {
+    const existing = await prisma.user.findUnique({
+      where: { email: SEED_EMAIL },
+    });
+
+    if (!existing) {
+      throw new Error(
+        `No account with the email ${SEED_EMAIL}. Sign in once to create it, then re-run the seed.`,
+      );
+    }
+
+    // Take a real account exactly as it is. Rewriting its name, or forcing the
+    // demo password onto an OAuth login, is not the seed's business.
+    return existing;
+  }
+
   const password = await hash(DEMO_PASSWORD, BCRYPT_ROUNDS);
 
   return prisma.user.upsert({
@@ -433,15 +464,15 @@ async function seedDemoUser() {
 }
 
 async function main() {
-  console.log(`Seeding system item types and demo user (${DEMO_EMAIL})...`);
+  console.log(`Seeding system item types and user (${SEED_EMAIL})...`);
   const [typeIds, user] = await Promise.all([
     seedSystemItemTypes(),
-    seedDemoUser(),
+    seedUser(),
   ]);
 
   // Make the seed re-runnable: clear this user's content and rebuild it.
   // Item -> ItemCollection and Item -> Tag rows go with the items.
-  console.log("Clearing existing demo content...");
+  console.log("Clearing existing content...");
   await prisma.item.deleteMany({ where: { userId: user.id } });
   await prisma.collection.deleteMany({ where: { userId: user.id } });
 

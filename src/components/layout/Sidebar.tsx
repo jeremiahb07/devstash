@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, PanelLeft, Settings, Star } from "lucide-react";
+import { ChevronDown, LogOut, PanelLeft, Star } from "lucide-react";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { signOutAction } from "@/actions/auth";
+import { UserAvatar } from "@/components/shared/UserAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +12,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLinkItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -26,22 +35,20 @@ import {
 } from "@/lib/constants/item-types";
 import type { CollectionSummary, SidebarCollections } from "@/lib/db/collections";
 import type { ItemTypeWithCount } from "@/lib/db/items";
-import { currentUser } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/hooks/use-sidebar";
+
+/** The fields of the session user the footer actually renders. */
+export interface SidebarUser {
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+}
 
 export interface SidebarProps {
   itemTypes: ItemTypeWithCount[];
   collections: SidebarCollections;
-}
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  user: SidebarUser;
 }
 
 function ProBadge() {
@@ -195,31 +202,95 @@ function CollectionsSection({ collections }: { collections: SidebarCollections }
   );
 }
 
-function UserFooter({ collapsed }: { collapsed: boolean }) {
+function UserFooter({
+  user,
+  collapsed,
+}: {
+  user: SidebarUser;
+  collapsed: boolean;
+}) {
+  // Every field on the session user is optional — a GitHub account can arrive
+  // without a display name, and an OAuth profile with a private email address
+  // without one of those either — so the label degrades through both.
+  const displayName = user.name?.trim() || user.email || "Your account";
+
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-2 border-t border-border p-3",
+        "flex items-center border-t border-border p-3",
         collapsed && "justify-center"
       )}
     >
-      <span className="flex min-w-0 items-center gap-2">
-        <Avatar size="sm">
-          <AvatarImage src={currentUser.image ?? undefined} alt={currentUser.name} />
-          <AvatarFallback>{getInitials(currentUser.name)}</AvatarFallback>
-        </Avatar>
-        {!collapsed && (
-          <span className="min-w-0">
-            <p className="truncate text-sm font-medium">{currentUser.name}</p>
-            <p className="truncate text-xs text-muted-foreground">{currentUser.email}</p>
-          </span>
-        )}
-      </span>
-      {!collapsed && (
-        <Link href="/settings" className="text-muted-foreground hover:text-foreground">
-          <Settings className="size-4" />
-        </Link>
-      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Account menu"
+              className={cn(
+                // Tailwind v4 resets buttons to `cursor: default`, so the
+                // pointer has to be asked for to match the links above it.
+                "flex min-w-0 cursor-pointer items-center gap-2 rounded-md text-left hover:bg-muted",
+                !collapsed && "-mx-1 flex-1 px-1 py-1"
+              )}
+            >
+              <UserAvatar
+                size="sm"
+                name={user.name}
+                email={user.email}
+                image={user.image}
+              />
+              {!collapsed && (
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">
+                    {displayName}
+                  </span>
+                  {/* Skipped when the email is the label already, or absent. */}
+                  {user.email && user.email !== displayName && (
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {user.email}
+                    </span>
+                  )}
+                </span>
+              )}
+            </button>
+          }
+        />
+        {/* The footer sits at the bottom of the viewport, so the menu opens
+            upward. Anchor width would match the narrow trigger on the collapsed
+            rail, hence the fixed width. */}
+        <DropdownMenuContent side="top" align="start" className="w-52">
+          {/* The name block is the way to the profile — `min-w-0` on the item
+              and `w-full` on the lines so a long email truncates instead of
+              widening the menu. */}
+          <DropdownMenuLinkItem
+            render={<Link href="/profile" />}
+            className="min-w-0 flex-col items-start gap-0 py-1.5"
+          >
+            <span className="w-full truncate text-sm font-medium">
+              {displayName}
+            </span>
+            {user.email && user.email !== displayName && (
+              <span className="w-full truncate text-xs text-muted-foreground">
+                {user.email}
+              </span>
+            )}
+          </DropdownMenuLinkItem>
+          <DropdownMenuSeparator />
+          {/* A form, so signing out is a POST rather than something a link
+              prefetch could trigger on its own. */}
+          <form action={signOutAction}>
+            <DropdownMenuItem
+              render={<button type="submit" className="w-full" />}
+              nativeButton
+              variant="destructive"
+            >
+              <LogOut />
+              Sign out
+            </DropdownMenuItem>
+          </form>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -227,6 +298,7 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
 function SidebarNav({
   itemTypes,
   collections,
+  user,
   collapsed,
   showToggle,
 }: SidebarProps & { collapsed: boolean; showToggle?: boolean }) {
@@ -262,13 +334,13 @@ function SidebarNav({
             </>
           )}
         </nav>
-        <UserFooter collapsed={collapsed} />
+        <UserFooter user={user} collapsed={collapsed} />
       </div>
     </TooltipProvider>
   );
 }
 
-export function Sidebar({ itemTypes, collections }: SidebarProps) {
+export function Sidebar({ itemTypes, collections, user }: SidebarProps) {
   const { collapsed, mobileOpen, setMobileOpen } = useSidebar();
 
   return (
@@ -282,6 +354,7 @@ export function Sidebar({ itemTypes, collections }: SidebarProps) {
         <SidebarNav
           itemTypes={itemTypes}
           collections={collections}
+          user={user}
           collapsed={collapsed}
           showToggle
         />
@@ -293,6 +366,7 @@ export function Sidebar({ itemTypes, collections }: SidebarProps) {
           <SidebarNav
             itemTypes={itemTypes}
             collections={collections}
+            user={user}
             collapsed={false}
           />
         </SheetContent>

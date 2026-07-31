@@ -1,4 +1,4 @@
-# Current Feature
+# Current Feature: Auth UI — Sign In, Register & Sign Out
 
 <!-- Feature Name -->
 
@@ -6,15 +6,29 @@
 
 <!-- Not Started|In Progress|Completed -->
 
-Not Started
+In Progress
 
 ## Goals
 
 <!-- Goals & requirements -->
 
+- Build a custom `/sign-in` page replacing NextAuth's default: email + password fields, a "Sign in with GitHub" button, a link to `/register`, plus form validation and error display
+- Build a custom `/register` page: name, email, password, confirm password, with validation (email format, passwords match), submitting to `/api/auth/register` and redirecting to sign-in on success
+- Point NextAuth at the custom sign-in page so unauthenticated `/dashboard` traffic lands there instead of the built-in page
+- Create a reusable avatar component: use the user's `image` (from GitHub) when present, otherwise render initials derived from the name ("Brad Traversy" → "BT")
+- Replace the sidebar footer's mock `currentUser` with the real session user — avatar, name and email
+- Add a dropdown on the sidebar avatar with a "Sign out" action, and make the avatar link to `/profile`
+
 ## Notes
 
 <!-- Any extra notes -->
+
+- Phase 3 of 3 (follows Auth Setup / GitHub OAuth and Auth Credentials / email+password, both complete)
+- `getCurrentUserId()` in `src/lib/db/user.ts` is still hardcoded to `demo@devstash.io` — this phase owns wiring the session through; note that repointing it means a freshly-registered account sees an empty dashboard
+- Known from phase 2: Auth.js's built-in credentials form emits no hidden `callbackUrl` and `callbackUrl` in the POST body is ignored, so the custom form must use `signIn("credentials", { redirectTo })`
+- `src/lib/mock-data.ts` survives on exactly one import — the sidebar footer's `currentUser` — so it can go once the footer reads the session
+- The spec's testing step 4 says "top bar", but the requirement above places the avatar in the sidebar footer, which is where it lives today
+- Spec kept at `context/features/auth-phase-3-spec.md`
 
 
 ## History

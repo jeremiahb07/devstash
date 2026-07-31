@@ -25,6 +25,10 @@ export const credentialFields = {
  * Auth.js picks up from the environment automatically.
  */
 export default {
+  // Replaces Auth.js's built-in pages. `signIn` doubles as the error page for
+  // anything that fails while signing in (`SignInError.kind === "signIn"`), so
+  // `/sign-in` also receives `?error=OAuthAccountNotLinked` and friends.
+  pages: { signIn: "/sign-in" },
   providers: [
     GitHub,
     // A placeholder so the proxy's provider list matches the real one. Checking

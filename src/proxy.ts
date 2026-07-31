@@ -11,20 +11,42 @@ import authConfig from "@/auth.config";
  */
 const { auth } = NextAuth(authConfig);
 
-export const proxy = auth((req) => {
-  if (req.auth) return;
+/** The auth pages, which someone already signed in has no use for. */
+const AUTH_ROUTES = ["/sign-in", "/register"];
 
-  // Auth.js's built-in sign-in page. `callbackUrl` is what sends the user back
-  // to the page they asked for once GitHub redirects them home.
-  const signInUrl = new URL("/api/auth/signin", req.nextUrl.origin);
-  signInUrl.searchParams.set(
-    "callbackUrl",
-    `${req.nextUrl.pathname}${req.nextUrl.search}`,
-  );
+/** Where a signed-in user is sent instead of those pages. */
+const SIGNED_IN_HOME = "/dashboard";
+
+export const proxy = auth((req) => {
+  const { pathname, search } = req.nextUrl;
+  const signedIn = Boolean(req.auth);
+
+  if (AUTH_ROUTES.includes(pathname)) {
+    // Only navigations. A redirect preserves the request method, so bouncing a
+    // POST would send a form submission to /dashboard, which cannot answer it —
+    // reachable by submitting a stale sign-in form in a second tab after
+    // signing in in the first. Letting it through costs nothing: the action
+    // redirects to the dashboard on its own.
+    if (signedIn && req.method === "GET") {
+      return NextResponse.redirect(new URL(SIGNED_IN_HOME, req.nextUrl.origin));
+    }
+
+    return;
+  }
+
+  if (signedIn) return;
+
+  // The custom sign-in page. `callbackUrl` is what sends the user back to the
+  // page they asked for once they are signed in.
+  const signInUrl = new URL("/sign-in", req.nextUrl.origin);
+  signInUrl.searchParams.set("callbackUrl", `${pathname}${search}`);
 
   return NextResponse.redirect(signInUrl);
 });
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  // Literals, not `...AUTH_ROUTES`: matcher values are read by static analysis
+  // at build time and "dynamic values such as variables will be ignored", which
+  // would silently drop the guard rather than fail. Keep both lists in step.
+  matcher: ["/dashboard/:path*", "/sign-in", "/register"],
 };

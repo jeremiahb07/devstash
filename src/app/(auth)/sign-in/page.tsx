@@ -1,0 +1,68 @@
+import Link from "next/link";
+
+import { RegisteredToast } from "@/components/auth/RegisteredToast";
+import { SignInForm } from "@/components/auth/SignInForm";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
+/**
+ * `/sign-in` is Auth.js's `pages.signIn`, so it also receives the redirect for
+ * anything that fails while signing in — most of which happens off-page, in the
+ * OAuth callback, where there is no form submission to report against.
+ */
+const SIGN_IN_ERRORS: Record<string, string> = {
+  OAuthAccountNotLinked:
+    "That email already has an account. Sign in the way you did the first time, then link GitHub from your profile.",
+  OAuthSignin: "Could not reach GitHub. Please try again.",
+  OAuthCallback: "GitHub did not complete the sign-in. Please try again.",
+  AccessDenied: "You do not have access to this account.",
+  Verification: "That sign-in link has expired. Please request a new one.",
+  Configuration:
+    "Sign-in is misconfigured on the server. Please contact support.",
+};
+
+const GENERIC_ERROR = "Something went wrong signing you in. Please try again.";
+
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    error?: string;
+    callbackUrl?: string;
+    registered?: string;
+  }>;
+}) {
+  const { error, callbackUrl, registered } = await searchParams;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Welcome back</CardTitle>
+        <CardDescription>Sign in to your DevStash account</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Set by the register form, so a new account gets some acknowledgement
+            rather than landing on an empty sign-in page. */}
+        {registered && <RegisteredToast />}
+        <SignInForm
+          callbackUrl={callbackUrl}
+          initialError={error ? (SIGN_IN_ERRORS[error] ?? GENERIC_ERROR) : null}
+        />
+        <p className="text-center text-sm text-muted-foreground">
+          Don&apos;t have an account?{" "}
+          <Link
+            href="/register"
+            className="font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            Create one
+          </Link>
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
