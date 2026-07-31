@@ -37,6 +37,9 @@ yarn-error.log*
 # prisma — generated client is built from schema.prisma via `prisma generate`
 /src/generated/
 
+# playwright mcp — page snapshots and console logs from browser testing
+/.playwright-mcp/
+
 # vercel
 .vercel
 
