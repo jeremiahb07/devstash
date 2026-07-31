@@ -91,17 +91,16 @@ Brief summary of the data/control flow between these files.
 
 ### If action is "complete":
 
-1. Run a final review to ensure everything is complete
-2. Stage all changes
-3. Commit with a descriptive message based on the feature
-4. Push the branch to origin
-5. Merge into main
-6. Switch back to main branch
-7. Reset current-feature.md:
+1. Stage all changes and commit with a descriptive message
+2. Switch to main and merge the feature branch (no push yet)
+3. Delete the local feature branch
+4. Reset current-feature.md:
    - Change H1 back to `# Current Feature`
-   - Clear Goals and Notes sections
-   - Set Status to "Not Started"
-8. Always add the feature summary to the END of History
+   - Clear Goals and Notes sections (keep placeholder comments)
+   - Always add the feature summary to the END of History
+5. Commit the reset: `chore: reset current-feature.md after completing [feature]`
+6. Push main to origin ONCE (single push with all changes)
+7. If feature branch was previously pushed, delete it from origin
 
 ---
 
