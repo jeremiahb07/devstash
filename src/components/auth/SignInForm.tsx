@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { signInWithCredentials, signInWithGitHub } from "@/actions/auth";
 import { FormError } from "@/components/auth/FormError";
 import { PasswordInput } from "@/components/auth/PasswordInput";
+import { ResendVerificationForm } from "@/components/auth/ResendVerificationForm";
 import { SubmitButton } from "@/components/auth/SubmitButton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +36,19 @@ export function SignInForm({ callbackUrl, initialError }: SignInFormProps) {
   return (
     <div className="space-y-4">
       <FormError message={state.error} />
+
+      {/* An unverified account is the one failure retyping cannot fix, so the
+          remedy is offered inline rather than only described. The sign-in form
+          stays put below it — this must not become a dead end for someone who
+          simply meant to use a different account. */}
+      {state.unverified && (
+        <div className="rounded-lg border border-border bg-muted/40 p-3">
+          <ResendVerificationForm
+            defaultEmail={state.email}
+            label="Send a new confirmation link"
+          />
+        </div>
+      )}
 
       <form action={formAction} className="space-y-3">
         {callbackUrl && (

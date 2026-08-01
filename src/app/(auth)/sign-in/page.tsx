@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { RegisteredToast } from "@/components/auth/RegisteredToast";
 import { SignInForm } from "@/components/auth/SignInForm";
 import {
   Card,
@@ -34,10 +33,9 @@ export default async function SignInPage({
   searchParams: Promise<{
     error?: string;
     callbackUrl?: string;
-    registered?: string;
   }>;
 }) {
-  const { error, callbackUrl, registered } = await searchParams;
+  const { error, callbackUrl } = await searchParams;
 
   return (
     <Card>
@@ -46,9 +44,6 @@ export default async function SignInPage({
         <CardDescription>Sign in to your DevStash account</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Set by the register form, so a new account gets some acknowledgement
-            rather than landing on an empty sign-in page. */}
-        {registered && <RegisteredToast />}
         <SignInForm
           callbackUrl={callbackUrl}
           initialError={error ? (SIGN_IN_ERRORS[error] ?? GENERIC_ERROR) : null}

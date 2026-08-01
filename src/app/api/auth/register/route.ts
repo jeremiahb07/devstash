@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 
 import { Prisma } from "@/generated/prisma/client";
+import {
+  buildVerificationUrl,
+  issueVerificationToken,
+} from "@/lib/auth/verification";
+import { sendVerificationEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { registerSchema } from "@/lib/validations/auth";
 
@@ -62,7 +67,20 @@ export async function POST(request: Request) {
       select: { id: true, name: true, email: true },
     });
 
-    return NextResponse.json({ success: true, data: user }, { status: 201 });
+    // The account exists either way. A provider outage must not turn a created
+    // account into a 500 the caller would read as "try again" — they would hit
+    // 409 forever — so the send result is reported alongside the success.
+    const { token } = await issueVerificationToken(email);
+    const { sent } = await sendVerificationEmail({
+      to: email,
+      name: user.name,
+      url: buildVerificationUrl(token),
+    });
+
+    return NextResponse.json(
+      { success: true, data: { ...user, emailSent: sent } },
+      { status: 201 },
+    );
   } catch (error) {
     // Two requests can pass the check above at the same time; the unique index
     // on `users.email` is what actually decides, so report its verdict the same

@@ -3,7 +3,15 @@
 import { AuthError } from "next-auth";
 
 import { signIn, signOut } from "@/auth";
-import { credentialsSchema } from "@/lib/validations/auth";
+import { EmailNotVerifiedError } from "@/lib/auth/errors";
+import {
+  buildVerificationUrl,
+  issueVerificationToken,
+  verificationCooldownRemaining,
+} from "@/lib/auth/verification";
+import { sendVerificationEmail } from "@/lib/email";
+import { prisma } from "@/lib/prisma";
+import { credentialsSchema, emailSchema } from "@/lib/validations/auth";
 
 /** Where a successful sign-in lands when nothing else was asked for. */
 const DEFAULT_REDIRECT = "/dashboard";
@@ -19,6 +27,11 @@ export interface SignInState {
    * failed attempt.
    */
   email?: string;
+  /**
+   * Set when the password was right but the address is unconfirmed, so the form
+   * can offer to send another link instead of only stating the problem.
+   */
+  unverified?: boolean;
 }
 
 /**
@@ -64,6 +77,17 @@ export async function signInWithCredentials(
       redirectTo: safeRedirect(formData.get("callbackUrl")),
     });
   } catch (error) {
+    // Thrown by `authorize` only once the password has already checked out, so
+    // saying this much reveals nothing to someone guessing addresses.
+    if (error instanceof EmailNotVerifiedError) {
+      return {
+        error:
+          "Confirm your email address before signing in. Check your inbox for the link.",
+        email,
+        unverified: true,
+      };
+    }
+
     if (error instanceof AuthError) {
       // `authorize` returns null for both "no such account" and "wrong
       // password", so there is only one message to give.
@@ -90,4 +114,80 @@ export async function signInWithGitHub(formData: FormData) {
 
 export async function signOutAction() {
   await signOut({ redirectTo: SIGN_OUT_REDIRECT });
+}
+
+export interface ResendVerificationState {
+  message: string | null;
+  ok: boolean;
+}
+
+/**
+ * Sends another verification link, for a link that expired or never arrived.
+ *
+ * This answers plainly whether an address has an account. That is a deliberate
+ * match to the register endpoint, which already replies "An account with that
+ * email already exists" — being coy here while the front door announces it
+ * would cost the honest user clarity and buy an attacker nothing.
+ *
+ * The per-address cooldown is the throttle that matters: without it this is an
+ * unauthenticated endpoint that will mail any address on demand, as often as
+ * asked.
+ */
+export async function resendVerificationEmail(
+  _previous: ResendVerificationState,
+  formData: FormData,
+): Promise<ResendVerificationState> {
+  const parsed = emailSchema.safeParse(formData.get("email"));
+
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0].message };
+  }
+
+  const email = parsed.data;
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { name: true, emailVerified: true, password: true },
+  });
+
+  if (!user) {
+    return { ok: false, message: "No account uses that email address." };
+  }
+
+  if (user.emailVerified) {
+    return { ok: true, message: "That address is already confirmed — sign in." };
+  }
+
+  // A GitHub-only row has nothing to verify: it never had a password, and the
+  // gate that would block it only runs in the credentials path.
+  if (!user.password) {
+    return { ok: true, message: "That account signs in with GitHub." };
+  }
+
+  const waitMs = await verificationCooldownRemaining(email);
+
+  if (waitMs > 0) {
+    const seconds = Math.ceil(waitMs / 1000);
+
+    return {
+      ok: false,
+      message: `A link was just sent. Try again in ${seconds} second${seconds === 1 ? "" : "s"}.`,
+    };
+  }
+
+  const { token } = await issueVerificationToken(email);
+  const { sent } = await sendVerificationEmail({
+    to: email,
+    name: user.name,
+    url: buildVerificationUrl(token),
+  });
+
+  if (!sent) {
+    return {
+      ok: false,
+      message: "Could not send the email just now. Please try again shortly.",
+    };
+  }
+
+  return { ok: true, message: "Sent. Check your inbox for the new link." };
 }

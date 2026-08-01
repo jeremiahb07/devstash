@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { MailCheck, MailWarning } from "lucide-react";
 import type { ZodError } from "zod";
 
 import { FormError } from "@/components/auth/FormError";
 import { PasswordInput } from "@/components/auth/PasswordInput";
+import { ResendVerificationForm } from "@/components/auth/ResendVerificationForm";
 import { SubmitButton } from "@/components/auth/SubmitButton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +17,12 @@ const FIELDS = ["name", "email", "password", "confirmPassword"] as const;
 type Field = (typeof FIELDS)[number];
 
 type FieldErrors = Partial<Record<Field, string>>;
+
+/** Set once the account exists — the form is replaced by this. */
+interface Registered {
+  email: string;
+  emailSent: boolean;
+}
 
 /** First message per field — a stack of them under one input is just noise. */
 function toFieldErrors(error: ZodError): FieldErrors {
@@ -43,6 +50,49 @@ function FieldError({ message }: { message?: string }) {
 }
 
 /**
+ * What replaces the form once the account exists.
+ *
+ * `emailSent` is reported rather than assumed: the account is created even when
+ * the provider rejects the send, and claiming "check your inbox" regardless
+ * would leave that person waiting on mail nobody accepted.
+ */
+function CheckYourEmail({ email, emailSent }: Registered) {
+  const Icon = emailSent ? MailCheck : MailWarning;
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-base font-semibold">
+        {emailSent ? "Check your email" : "Account created"}
+      </h2>
+
+      <p className="flex items-start gap-2 text-sm text-muted-foreground">
+        <span className={emailSent ? "text-emerald-500" : "text-amber-500"}>
+          <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+        </span>
+        {emailSent ? (
+          <span>
+            We sent a confirmation link to{" "}
+            <span className="font-medium text-foreground">{email}</span>. Click
+            it to finish setting up your account — the link lasts 24 hours.
+          </span>
+        ) : (
+          <span>
+            Your account is ready, but the confirmation email to{" "}
+            <span className="font-medium text-foreground">{email}</span> could
+            not be sent. Try again below.
+          </span>
+        )}
+      </p>
+
+      <ResendVerificationForm
+        defaultEmail={email}
+        label={emailSent ? "Resend the link" : "Send the link"}
+      />
+    </div>
+  );
+}
+
+/**
  * Posts to `/api/auth/register` rather than going through a Server Action: the
  * caller needs the status code to tell a duplicate email apart from a bad
  * payload, and the route is the same one a future CLI client would use.
@@ -52,7 +102,7 @@ function FieldError({ message }: { message?: string }) {
  * trip while the server still refuses to trust any of it.
  */
 export function RegisterForm() {
-  const router = useRouter();
+  const [registered, setRegistered] = useState<Registered | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -92,13 +142,22 @@ export function RegisterForm() {
         return;
       }
 
-      // Left pending through the navigation so the button can't be pressed
-      // twice while the next page loads.
-      router.push("/sign-in?registered=1");
+      // No redirect to sign-in: signing in is blocked until the address is
+      // confirmed, so sending them to a form they cannot use would be a dead
+      // end. The form is replaced in place by what to do next instead.
+      setRegistered({
+        email: parsed.data.email,
+        emailSent: result?.data?.emailSent !== false,
+      });
+      setPending(false);
     } catch {
       setError("Could not reach the server. Please try again.");
       setPending(false);
     }
+  }
+
+  if (registered) {
+    return <CheckYourEmail {...registered} />;
   }
 
   return (

@@ -450,15 +450,21 @@ async function seedUser() {
 
   const password = await hash(DEMO_PASSWORD, BCRYPT_ROUNDS);
 
+  // `emailVerified` is set on both branches, not just `create`: sign-in now
+  // refuses unconfirmed password accounts, and the demo row already existed
+  // unverified — an update that skipped it would leave the seeded account
+  // unable to sign in, which is the one thing it exists to do.
+  const emailVerified = new Date();
+
   return prisma.user.upsert({
     where: { email: DEMO_EMAIL },
-    update: { name: "Demo User", password, isPro: false },
+    update: { name: "Demo User", password, isPro: false, emailVerified },
     create: {
       email: DEMO_EMAIL,
       name: "Demo User",
       password,
       isPro: false,
-      emailVerified: new Date(),
+      emailVerified,
     },
   });
 }

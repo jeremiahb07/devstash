@@ -21,6 +21,13 @@ const email = z
   .pipe(z.email("Enter a valid email address"));
 
 /**
+ * The address on its own, for the "send me another verification link" form —
+ * which has the same normalisation requirement as the two schemas below, since
+ * it looks accounts up by the same key.
+ */
+export const emailSchema = email;
+
+/**
  * What the sign-in form posts. Deliberately lenient on the password: enforcing
  * the length policy here would only tell an attacker what the policy is, and a
  * wrong password fails the hash comparison either way.

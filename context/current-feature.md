@@ -1,4 +1,4 @@
-# Current Feature
+# Current Feature: Email Verification on Register
 
 <!-- Feature Name -->
 
@@ -6,15 +6,34 @@
 
 <!-- Not Started|In Progress|Completed -->
 
-Not Started
+In Progress
 
 ## Goals
 
 <!-- Goals & requirements -->
 
+- Send a verification email through Resend when an account is registered, containing a single-use tokenized link back to the app
+- Add a `/verify-email` route that consumes the token, stamps `User.emailVerified`, and renders a clear result for each outcome: verified, already verified, expired, and unknown/invalid token
+- Block credentials sign-in until the address is verified, with a message that says so rather than the generic "Invalid email or password"
+- Replace the post-register "You can now sign in" toast and copy with a "check your email" state, since signing in is no longer the next step
+- Let a user request a fresh verification email when the link has expired or never arrived
+- Add `resend` as a dependency and document `RESEND_API_KEY` (plus whatever base-URL variable the link needs) in `.env.example`
+
 ## Notes
 
 <!-- Any extra notes -->
+
+- `RESEND_API_KEY` is confirmed present in `.env`; `resend` is **not** in `package.json` yet
+- **No schema change should be needed.** `User.emailVerified DateTime?` and the `VerificationToken` model (`identifier`, `token`, `expires`, `@@unique([identifier, token])`) have both existed since the initial migration. `VerificationToken` is the Auth.js adapter's table, used by the Email/magic-link provider — which this app does not use — so it is free to reuse. Decide explicitly whether to reuse it or add a dedicated model; reusing avoids a migration, a dedicated model avoids colliding with the adapter if an Email provider is ever added
+- **Every existing account has `emailVerified = null`**, including the seeded `demo@devstash.io`. A sign-in gate would lock all of them out, so `prisma/seed.ts` must stamp the demo user as verified, and the pre-existing rows need a decision (backfill vs. leave)
+- **GitHub OAuth accounts must not be caught by the gate.** `boacjeremiah@gmail.com` has `password IS NULL` and `emailVerified` unset; GitHub has already verified that address, so the gate belongs in the credentials `authorize` path only, not in a global callback
+- There is no `AUTH_URL`/`NEXTAUTH_URL` in `.env`, so the absolute link in the email needs a base URL from somewhere — a new env var, or derived from request headers
+- **Resend sending constraint worth checking before testing:** without a verified sending domain, Resend's `onboarding@resend.dev` sender can only deliver to the Resend account owner's own address. Test accounts on throwaway domains (`@devstash.test`, yopmail) may silently fail to receive
+- Consider storing a hash of the token rather than the raw value, so a database leak does not hand over working verification links
+- Phase 2 recorded `emailVerified` staying null for password accounts as known-and-deliberate "nothing gates on it today" — this feature is what makes it matter
+- Phase 2 also recorded that there is **no rate limiting on `/api/auth/register`**; adding an email send to that endpoint turns it into a way to send mail to arbitrary addresses, which raises the priority of that decision
+- The register route currently returns 201 and the client redirects to `/sign-in?registered=1`, where `RegisteredToast` fires — that flow and its copy are what change
+- Auth.js turns any `authorize` rejection into a generic `CredentialsSignin`; surfacing "please verify your email" distinctly needs either a custom error class with a `code`, or a check ahead of `signIn()` in the server action
 
 
 ## History

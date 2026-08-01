@@ -4,6 +4,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { compare } from "bcryptjs";
 
 import authConfig, { credentialFields } from "@/auth.config";
+import { EmailNotVerifiedError } from "@/lib/auth/errors";
 import { prisma } from "@/lib/prisma";
 import { credentialsSchema } from "@/lib/validations/auth";
 
@@ -31,6 +32,7 @@ const credentialsProvider = Credentials({
         email: true,
         image: true,
         password: true,
+        emailVerified: true,
       },
     });
 
@@ -39,6 +41,15 @@ const credentialsProvider = Credentials({
     if (!user?.password) return null;
 
     if (!(await compare(password, user.password))) return null;
+
+    // Deliberately *after* the password check: telling an anonymous caller that
+    // an address exists but is unverified would hand them an account
+    // enumeration oracle. Only someone who already knows the password sees it.
+    //
+    // This lives in the credentials path alone, not in a shared callback, so
+    // GitHub logins are unaffected — GitHub has already proven that address,
+    // and those rows carry no `emailVerified` of ours.
+    if (!user.emailVerified) throw new EmailNotVerifiedError();
 
     // Everything but the hash: this becomes the JWT payload.
     return {
