@@ -1,4 +1,4 @@
-# Current Feature
+# Current Feature: Email Verification Toggle
 
 <!-- Feature Name -->
 
@@ -6,15 +6,42 @@
 
 <!-- Not Started|In Progress|Completed -->
 
-Not Started
+In Progress
 
 ## Goals
 
 <!-- Goals & requirements -->
 
+- Add a single flag that turns the whole email-verification requirement on or off, so registration works for any address while Resend has no verified domain.
+- One source of truth for the flag — a `src/lib/auth/verification-policy.ts` (or equivalent) module reading a server-only env var, `EMAIL_VERIFICATION_ENABLED`. No component or route reads `process.env` directly.
+- Default to **enabled** when the var is unset, and treat only an explicit `"false"`/`"0"` as off, so a typo or a missing value leaves the current (secure) behaviour intact.
+- With the flag **off**:
+  - `POST /api/auth/register` creates the account, skips issuing a token, skips the send, and stamps `emailVerified` so the row is immediately sign-in-ready.
+  - Credentials `authorize` in `src/auth.ts` skips the `EmailNotVerifiedError` gate.
+  - `resendVerificationEmail` in `src/actions/auth.ts` refuses with a plain "verification is not required" rather than mailing anything.
+  - `RegisterForm` skips the "check your email" panel and sends the user to `/sign-in` instead — driven by a field on the register response, **not** a `NEXT_PUBLIC_` var, so the flag stays server-only.
+- With the flag **on**, every current behaviour is byte-for-byte unchanged: token issued, email sent, sign-in gated, resend form offered.
+- `/api/auth/verify-email` and `/verify-email` keep working with the flag off, so a link mailed before the toggle flipped still redeems instead of 404ing or erroring.
+- Document the var in `.env.example` alongside `RESEND_API_KEY`/`EMAIL_FROM`, saying plainly why you would turn it off and that it must be on in production.
+- Verify both states against the dev server — register + sign in with a non-Resend address flag-off, and the full unverified-block flow flag-on — then `npm run build`, typecheck and lint.
+
 ## Notes
 
 <!-- Any extra notes -->
+
+**Why an env var over the alternatives.** A DB-backed setting or a config file would both be read from the same places an env var is, but neither is reachable from the credentials `authorize` path without another query, and the flag has to be decidable during `next build` and in CI where no database is guaranteed. A hardcoded constant would work but needs a redeploy to change and would sit in the diff of whoever forgets to flip it back.
+
+**The decision that actually matters: what happens when the flag goes back on.** If a flag-off registration left `emailVerified` null, then turning verification back on would lock out every account created while it was off — they would need a resend round trip to get in, on an address nobody ever asked them to confirm. Stamping `emailVerified` at creation while the flag is off avoids that entirely and makes the flag purely about the *flow*, not about the state of existing rows. The tradeoff, worth stating out loud: those rows claim a verified address that was never proven, so they are indistinguishable later from ones that went through a real round trip. That is the correct reading of the policy ("we do not require proof right now") but it means flag-off accounts cannot be retroactively audited or re-challenged. The alternative — a nullable `emailVerified` plus a gate that skips the check — keeps the data honest but makes the toggle one-way in practice.
+
+**Related decisions.**
+
+- `EMAIL_FROM`'s doc comment and `src/lib/email.ts`'s header already explain the no-verified-domain limitation; the new var's comment should point at them rather than restate it.
+- The sign-in page's resend form needs no gating of its own — it only renders when `SignInState.unverified` is true, which only the gate sets, so it goes quiet on its own once the gate is skipped.
+- `prisma/seed.ts` already stamps `emailVerified` on both branches, so it needs no change either way.
+- Leaving `sendVerificationEmail`'s dev-console link logging alone: it is inside the send path, which flag-off never reaches.
+- No schema change and no migration — this is entirely a policy flag over columns that already exist.
+
+**Out of scope.** The two known 500s recorded in the previous feature's history (`issueVerificationToken` inside the register route's outer try; `consumeVerificationToken` using `delete()` rather than `deleteMany()`) are untouched here — the flag makes the first one unreachable while off, which is not the same as fixing it.
 
 ## History
 

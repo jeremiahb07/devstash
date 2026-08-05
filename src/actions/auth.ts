@@ -9,6 +9,7 @@ import {
   issueVerificationToken,
   verificationCooldownRemaining,
 } from "@/lib/auth/verification";
+import { isEmailVerificationEnabled } from "@/lib/auth/verification-policy";
 import { sendVerificationEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { credentialsSchema, emailSchema } from "@/lib/validations/auth";
@@ -137,6 +138,16 @@ export async function resendVerificationEmail(
   _previous: ResendVerificationState,
   formData: FormData,
 ): Promise<ResendVerificationState> {
+  // Answered before the address is even parsed: with verification switched off
+  // there is nothing to send whoever is asking, so there is no reason to look up
+  // whether the account exists.
+  if (!isEmailVerificationEnabled()) {
+    return {
+      ok: true,
+      message: "Email confirmation is not required right now — just sign in.",
+    };
+  }
+
   const parsed = emailSchema.safeParse(formData.get("email"));
 
   if (!parsed.success) {

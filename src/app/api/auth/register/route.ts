@@ -6,6 +6,7 @@ import {
   buildVerificationUrl,
   issueVerificationToken,
 } from "@/lib/auth/verification";
+import { isEmailVerificationEnabled } from "@/lib/auth/verification-policy";
 import { sendVerificationEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { registerSchema } from "@/lib/validations/auth";
@@ -61,11 +62,33 @@ export async function POST(request: Request) {
       );
     }
 
+    const verificationRequired = isEmailVerificationEnabled();
+
     const user = await prisma.user.create({
-      data: { name, email, password: await hash(password, BCRYPT_ROUNDS) },
+      data: {
+        name,
+        email,
+        password: await hash(password, BCRYPT_ROUNDS),
+        // With verification switched off the address is accepted as given.
+        // Stamping it now, rather than leaving it null and relying on the gate
+        // being skipped, is what keeps the switch reversible: turning
+        // verification back on would otherwise lock out every account created
+        // while it was off, on an address nobody ever asked them to confirm.
+        emailVerified: verificationRequired ? null : new Date(),
+      },
       // Never select the hash — this object goes straight into the response.
       select: { id: true, name: true, email: true },
     });
+
+    // `emailSent` is omitted here rather than reported as false: no email was
+    // attempted, which is a different thing from one that failed to go out.
+    // `verificationRequired` is what a caller branches on.
+    if (!verificationRequired) {
+      return NextResponse.json(
+        { success: true, data: { ...user, verificationRequired } },
+        { status: 201 },
+      );
+    }
 
     // The account exists either way. A provider outage must not turn a created
     // account into a 500 the caller would read as "try again" — they would hit
@@ -78,7 +101,10 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(
-      { success: true, data: { ...user, emailSent: sent } },
+      {
+        success: true,
+        data: { ...user, verificationRequired, emailSent: sent },
+      },
       { status: 201 },
     );
   } catch (error) {

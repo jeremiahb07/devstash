@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { MailCheck, MailWarning } from "lucide-react";
 import type { ZodError } from "zod";
 
@@ -102,6 +103,7 @@ function CheckYourEmail({ email, emailSent }: Registered) {
  * trip while the server still refuses to trust any of it.
  */
 export function RegisterForm() {
+  const router = useRouter();
   const [registered, setRegistered] = useState<Registered | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
@@ -142,9 +144,21 @@ export function RegisterForm() {
         return;
       }
 
-      // No redirect to sign-in: signing in is blocked until the address is
-      // confirmed, so sending them to a form they cannot use would be a dead
-      // end. The form is replaced in place by what to do next instead.
+      // With verification switched off server-side the account can sign in
+      // immediately, so there is nothing to wait for. Compared with `false`
+      // rather than checked for falsiness: a response missing the field takes
+      // the "check your email" path, which is the safe one to get wrong.
+      //
+      // `pending` deliberately stays true through the navigation, so the button
+      // cannot be pressed a second time while the route change is in flight.
+      if (result?.data?.verificationRequired === false) {
+        router.push("/sign-in?registered=1");
+        return;
+      }
+
+      // Otherwise no redirect to sign-in: signing in is blocked until the
+      // address is confirmed, so sending them to a form they cannot use would be
+      // a dead end. The form is replaced in place by what to do next instead.
       setRegistered({
         email: parsed.data.email,
         emailSent: result?.data?.emailSent !== false,
