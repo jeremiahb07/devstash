@@ -13,8 +13,13 @@ import {
  * `/sign-in` is Auth.js's `pages.signIn`, so it also receives the redirect for
  * anything that fails while signing in — most of which happens off-page, in the
  * OAuth callback, where there is no form submission to report against.
+ *
+ * The keys are Auth.js's own error codes, except `SessionInvalid`, which is ours
+ * — see `src/app/api/auth/stale-session/route.ts`.
  */
 const SIGN_IN_ERRORS: Record<string, string> = {
+  SessionInvalid:
+    "You were signed out because that account no longer exists. Sign in with another account, or create one.",
   OAuthAccountNotLinked:
     "That email already has an account. Sign in the way you did the first time, then link GitHub from your profile.",
   OAuthSignin: "Could not reach GitHub. Please try again.",

@@ -1,20 +1,44 @@
 # Current Feature
 
-<!-- Feature Name -->
+Sign Out a Deleted User
 
 ## Status
 
 <!-- Not Started|In Progress|Completed -->
 
-Not Started
+In Progress
 
 ## Goals
 
 <!-- Goals & requirements -->
 
+Deleting a user row leaves that person signed in: sessions are JWTs, so the
+signed cookie *is* the session and nothing ever asks the database whether the
+account still exists. Reloading `/dashboard` renders the token's name and email
+over an empty dashboard until the cookie expires.
+
+- Add `getCurrentUser()` to `src/lib/db/user.ts` — the session id resolved to a
+  real `users` row, cached per request.
+- `src/app/dashboard/layout.tsx` redirects when that row is gone, and feeds the
+  sidebar footer from it so the footer shows current values rather than whatever
+  the token was minted with.
+- Clear the cookie from a route handler, `GET /api/auth/stale-session`, because a
+  Server Component cannot set cookies — the layout can detect the problem but
+  cannot fix it. The handler re-checks before signing anyone out, then lands on
+  `/sign-in` with an explanation.
+
 ## Notes
 
 <!-- Any extra notes -->
+
+- The proxy stays Prisma-free. It decides only "is this cookie signed", as
+  before; the existence check costs one indexed lookup on dashboard renders
+  rather than a Neon round trip ahead of every matched request.
+- The re-check in the handler is what makes a `GET` safe: a forced request for
+  someone whose account is fine clears nothing.
+- Fixes the double JWT decode noted at the end of the Auth UI phase —
+  `getCurrentUser()` builds on `getCurrentUserId()`, so `auth()` is decoded once
+  per request instead of once in the layout and once in the fetchers.
 
 
 ## History
