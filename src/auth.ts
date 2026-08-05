@@ -5,6 +5,7 @@ import { compare } from "bcryptjs";
 
 import authConfig, { credentialFields } from "@/auth.config";
 import { EmailNotVerifiedError } from "@/lib/auth/errors";
+import { isEmailVerificationEnabled } from "@/lib/auth/verification-policy";
 import { prisma } from "@/lib/prisma";
 import { credentialsSchema } from "@/lib/validations/auth";
 
@@ -49,7 +50,12 @@ const credentialsProvider = Credentials({
     // This lives in the credentials path alone, not in a shared callback, so
     // GitHub logins are unaffected — GitHub has already proven that address,
     // and those rows carry no `emailVerified` of ours.
-    if (!user.emailVerified) throw new EmailNotVerifiedError();
+    //
+    // Skipped wholesale when verification is switched off, which also lets in
+    // accounts that registered while it was on and never confirmed.
+    if (isEmailVerificationEnabled() && !user.emailVerified) {
+      throw new EmailNotVerifiedError();
+    }
 
     // Everything but the hash: this becomes the JWT payload.
     return {

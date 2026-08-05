@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { RegisteredToast } from "@/components/auth/RegisteredToast";
 import { SignInForm } from "@/components/auth/SignInForm";
 import {
   Card,
@@ -38,12 +39,17 @@ export default async function SignInPage({
   searchParams: Promise<{
     error?: string;
     callbackUrl?: string;
+    registered?: string;
   }>;
 }) {
-  const { error, callbackUrl } = await searchParams;
+  const { error, callbackUrl, registered } = await searchParams;
 
   return (
     <Card>
+      {/* Set by `RegisterForm` when verification is switched off and the new
+          account can sign in straight away. Mounting is the trigger, so it is
+          rendered only when the flag is present. */}
+      {registered && <RegisteredToast />}
       <CardHeader>
         <CardTitle>Welcome back</CardTitle>
         <CardDescription>Sign in to your DevStash account</CardDescription>
